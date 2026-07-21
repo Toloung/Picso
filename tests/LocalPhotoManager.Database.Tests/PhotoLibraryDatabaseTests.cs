@@ -24,6 +24,22 @@ public sealed class PhotoLibraryDatabaseTests : IDisposable
         Assert.Equal("Camera", storedPhoto.Metadata.CameraMake);
     }
 
+    [Fact]
+    public async Task MarkPhotoMissingAsyncHidesPhotoFromRecentResults()
+    {
+        var database = new PhotoLibraryDatabase(Path.Combine(temporaryDirectory, "library.db"));
+        await database.InitializeAsync();
+        var photo = new DiscoveredPhoto("C:\\Photos\\missing.jpg", "missing.jpg", ".jpg", 42, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var metadata = new ImageMetadata("image/jpeg", 1920, 1080, null, null, null, null);
+
+        await database.UpsertPhotoAsync("C:\\Photos", photo, metadata);
+        var marked = await database.MarkPhotoMissingAsync(photo.Path);
+
+        Assert.True(marked);
+        Assert.Equal(0, await database.GetPhotoCountAsync());
+        Assert.Empty(await database.GetRecentPhotosAsync());
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(temporaryDirectory))

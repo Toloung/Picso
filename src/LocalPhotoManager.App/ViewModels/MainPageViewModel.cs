@@ -14,20 +14,26 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 {
     private readonly IPhotoScanner scanner;
     private readonly PhotoLibraryDatabase database;
+    private readonly IPhotoFileWatcher watcher;
     private readonly WindowsThumbnailGenerator thumbnailGenerator;
     private readonly ILogger<MainPageViewModel> logger;
     private CancellationTokenSource? scanCancellation;
+    private string? watchedDirectoryPath;
+    private bool disposed;
 
     public MainPageViewModel(
         IPhotoScanner scanner,
         PhotoLibraryDatabase database,
+        IPhotoFileWatcher watcher,
         WindowsThumbnailGenerator thumbnailGenerator,
         ILogger<MainPageViewModel> logger)
     {
         this.scanner = scanner;
         this.database = database;
+        this.watcher = watcher;
         this.thumbnailGenerator = thumbnailGenerator;
         this.logger = logger;
+        this.watcher.FileChanged += OnFileChanged;
     }
 
     public ObservableCollection<PhotoListItem> Photos { get; } = [];
@@ -80,6 +86,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
             }
 
             StatusMessage = $"已在本机索引 {count:N0} 张图片。";
+            StartWatching(directoryPath);
         }
         catch (OperationCanceledException)
         {
@@ -100,6 +107,157 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void CancelScan() => scanCancellation?.Cancel();
+
+    private void StartWatching(string directoryPath)
+    {
+        try
+        {
+            watchedDirectoryPath = directoryPath;
+            watcher.Start(directoryPath);
+        }
+        catch (Exception exception)
+        {
+            LogWatcherStartFailed(logger, exception, directoryPath);
+            StatusMessage = "已完成索引，但实时监听未启动。详细信息已写入本地日志。";
+        }
+    }
+
+    private void OnFileChanged(object? sender, PhotoFileChange change)
+    {
+        if (disposed)
+        {
+            return;
+        }
+
+        var dispatcher = App.DispatcherQueue;
+        if (dispatcher is not null && dispatcher.TryEnqueue(() => _ = HandleFileChangeAsync(change)))
+        {
+            return;
+        }
+
+        _ = HandleFileChangeAsync(change);
+    }
+
+    private async Task HandleFileChangeAsync(PhotoFileChange change)
+    {
+        if (disposed || IsScanning)
+        {
+            return;
+        }
+
+        try
+        {
+            switch (change.Kind)
+            {
+                case PhotoFileChangeKind.Created:
+                case PhotoFileChangeKind.Changed:
+                    await IndexPhotoPathAsync(change.Path);
+                    break;
+                case PhotoFileChangeKind.Deleted:
+                    await MarkPhotoMissingAsync(change.Path);
+                    break;
+                case PhotoFileChangeKind.Renamed:
+                    if (change.PreviousPath is not null)
+                    {
+                        await MarkPhotoMissingAsync(change.PreviousPath);
+                    }
+
+                    await IndexPhotoPathAsync(change.Path);
+                    break;
+                case PhotoFileChangeKind.RescanRequired:
+                    StatusMessage = "检测到大量文件变化，请重新扫描当前文件夹以校准本地索引。";
+                    break;
+            }
+        }
+        catch (Exception exception)
+        {
+            LogWatcherChangeFailed(logger, exception, change.Path);
+            StatusMessage = "实时索引更新未完成。详细信息已写入本地日志。";
+        }
+    }
+
+    private async Task IndexPhotoPathAsync(string path)
+    {
+        if (watchedDirectoryPath is null)
+        {
+            return;
+        }
+
+        var photo = TryCreateDiscoveredPhoto(path);
+        if (photo is null)
+        {
+            await MarkPhotoMissingAsync(path);
+            return;
+        }
+
+        var metadata = await WindowsImageMetadataReader.TryReadAsync(photo);
+        if (metadata is null)
+        {
+            LogInvalidImageSkipped(logger, photo.Path);
+            return;
+        }
+
+        await database.UpsertPhotoAsync(watchedDirectoryPath, photo, metadata);
+        await TryGenerateThumbnailAsync(photo, CancellationToken.None);
+        AddOrReplacePhoto(PhotoListItem.From(photo, metadata));
+        StatusMessage = $"已更新本地索引：{photo.FileName}";
+    }
+
+    private async Task MarkPhotoMissingAsync(string path)
+    {
+        await database.MarkPhotoMissingAsync(PathPolicy.NormalizePath(path));
+        RemovePhoto(path);
+        StatusMessage = "已从本地索引中标记移除一张图片。";
+    }
+
+    private static DiscoveredPhoto? TryCreateDiscoveredPhoto(string path)
+    {
+        try
+        {
+            var fileInfo = new FileInfo(path);
+            if (!fileInfo.Exists)
+            {
+                return null;
+            }
+
+            return new DiscoveredPhoto(
+                PathPolicy.NormalizePath(fileInfo.FullName),
+                fileInfo.Name,
+                fileInfo.Extension.ToLowerInvariant(),
+                fileInfo.Length,
+                fileInfo.CreationTimeUtc,
+                fileInfo.LastWriteTimeUtc);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private void AddOrReplacePhoto(PhotoListItem photo)
+    {
+        RemovePhoto(photo.Path);
+        Photos.Insert(0, photo);
+    }
+
+    private bool RemovePhoto(string path)
+    {
+        var normalizedPath = PathPolicy.NormalizePath(path);
+        for (var index = 0; index < Photos.Count; index++)
+        {
+            if (StringComparer.OrdinalIgnoreCase.Equals(Photos[index].Path, normalizedPath))
+            {
+                Photos.RemoveAt(index);
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public async Task LoadAsync()
     {
@@ -126,8 +284,16 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+        watcher.FileChanged -= OnFileChanged;
         scanCancellation?.Cancel();
         scanCancellation?.Dispose();
+        watcher.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
     private async Task TryGenerateThumbnailAsync(DiscoveredPhoto photo, CancellationToken cancellationToken)
@@ -157,6 +323,12 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "Loading the local photo index failed.")]
     private static partial void LogLibraryLoadFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "Starting the file watcher for {FolderPath} failed.")]
+    private static partial void LogWatcherStartFailed(ILogger logger, Exception exception, string folderPath);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Warning, Message = "Applying a watched file change failed for {PhotoPath}.")]
+    private static partial void LogWatcherChangeFailed(ILogger logger, Exception exception, string photoPath);
 }
 
 public sealed record PhotoListItem(string FileName, string Path, string SizeLabel, string DetailsLabel)

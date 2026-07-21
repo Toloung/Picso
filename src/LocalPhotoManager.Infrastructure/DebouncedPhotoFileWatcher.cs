@@ -29,6 +29,7 @@ public sealed class DebouncedPhotoFileWatcher : IPhotoFileWatcher
         }
 
         watcher?.Dispose();
+        CancelPendingChanges();
         this.rootPath = PathPolicy.NormalizePath(rootPath);
         watcher = new FileSystemWatcher(rootPath)
         {
@@ -36,13 +37,13 @@ public sealed class DebouncedPhotoFileWatcher : IPhotoFileWatcher
             Filter = "*",
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
             InternalBufferSize = 64 * 1024,
-            EnableRaisingEvents = true,
         };
         watcher.Created += (_, eventArgs) => Schedule(eventArgs.FullPath, PhotoFileChangeKind.Created);
         watcher.Changed += (_, eventArgs) => Schedule(eventArgs.FullPath, PhotoFileChangeKind.Changed);
         watcher.Deleted += (_, eventArgs) => Schedule(eventArgs.FullPath, PhotoFileChangeKind.Deleted);
         watcher.Renamed += (_, eventArgs) => ScheduleRename(eventArgs.OldFullPath, eventArgs.FullPath);
         watcher.Error += (_, _) => Raise(new PhotoFileChange(PhotoFileChangeKind.RescanRequired, this.rootPath));
+        watcher.EnableRaisingEvents = true;
     }
 
     private void ScheduleRename(string oldPath, string newPath)
@@ -119,7 +120,19 @@ public sealed class DebouncedPhotoFileWatcher : IPhotoFileWatcher
         if (pending.TryRemove(PathPolicy.NormalizePath(path), out var existing))
         {
             existing.Cancel();
+            existing.Dispose();
         }
+    }
+
+    private void CancelPendingChanges()
+    {
+        foreach (var cancellation in pending.Values)
+        {
+            cancellation.Cancel();
+            cancellation.Dispose();
+        }
+
+        pending.Clear();
     }
 
     private void Raise(PhotoFileChange change) => FileChanged?.Invoke(this, change);
@@ -133,12 +146,7 @@ public sealed class DebouncedPhotoFileWatcher : IPhotoFileWatcher
 
         disposed = true;
         watcher?.Dispose();
-        foreach (var cancellation in pending.Values)
-        {
-            cancellation.Cancel();
-        }
-
-        pending.Clear();
+        CancelPendingChanges();
         return ValueTask.CompletedTask;
     }
 }

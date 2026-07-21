@@ -8,3 +8,4 @@
 - Added a local-library UI shell with folder selection and scan status.
 - Added Windows-native thumbnail generation and a debounced FileSystemWatcher service.
 - Added content validation, EXIF-oriented metadata extraction, database migration v2, and startup index restoration.
+- Connected file watcher events to local index updates for created, changed, deleted, and renamed photos.
