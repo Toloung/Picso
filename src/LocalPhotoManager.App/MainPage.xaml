@@ -48,7 +48,7 @@
                 </Grid.ColumnDefinitions>
 
                 <ListView ItemsSource="{x:Bind ViewModel.Photos, Mode=OneWay}"
-                          SelectionMode="Multiple" IsItemClickEnabled="True">
+                          SelectionMode="Single" IsItemClickEnabled="True" ItemClick="OnPhotoItemClick">
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="viewModels:PhotoListItem">
                             <Grid Padding="8" ColumnSpacing="12">
@@ -76,6 +76,20 @@
 
                 <ScrollViewer Grid.Column="1">
                     <StackPanel Spacing="16">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="预览" Style="{StaticResource SubtitleTextBlockStyle}" />
+                            <Border Height="220" CornerRadius="6" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                                <Grid>
+                                    <FontIcon Glyph="&#xEB9F;" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="42" Opacity="0.45" />
+                                    <Image Source="{x:Bind ViewModel.SelectedPreviewImage, Mode=OneWay}" Stretch="Uniform" />
+                                </Grid>
+                            </Border>
+                            <TextBlock Text="{x:Bind ViewModel.SelectedFileName, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                            <TextBlock Text="{x:Bind ViewModel.SelectedFolder, Mode=OneWay}" Opacity="0.75" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{x:Bind ViewModel.SelectedDetails, Mode=OneWay}" Opacity="0.75" TextWrapping="Wrap" />
+                            <TextBlock Text="{x:Bind ViewModel.SelectedPath, Mode=OneWay}" Opacity="0.65" TextWrapping="WrapWholeWords" />
+                        </StackPanel>
+
                         <StackPanel Spacing="8">
                             <TextBlock Text="文件夹" Style="{StaticResource SubtitleTextBlockStyle}" />
                             <ListView ItemsSource="{x:Bind ViewModel.Folders, Mode=OneWay}"

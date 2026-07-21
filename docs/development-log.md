@@ -14,3 +14,4 @@
 - Produced a signed x64 MSIX test package and zipped install folder under `E:\Picso\LocalPhotoManager\artifacts`.
 - Fixed the MSIX test certificate Basic Constraints issue and regenerated the signed x64 package.
 - Replaced photo-list placeholders with generated thumbnails and blocked navigation changes during active scans.
+- Added in-app click preview with file name, folder, path, image dimensions, MIME type, and size.

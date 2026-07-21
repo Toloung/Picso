@@ -28,6 +28,14 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private void OnPhotoItemClick(object sender, ItemClickEventArgs args)
+    {
+        if (args.ClickedItem is PhotoListItem photo)
+        {
+            ViewModel.SelectPhoto(photo);
+        }
+    }
+
     private async void OnFolderItemClick(object sender, ItemClickEventArgs args)
     {
         if (args.ClickedItem is FolderSummaryItem folder)

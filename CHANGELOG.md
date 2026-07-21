@@ -13,3 +13,4 @@
 - Added a repeatable MSIX packaging script and produced a signed x64 test package.
 - Fixed the MSIX test certificate generation so sideload certificates include Basic Constraints.
 - Display generated thumbnails in the photo list and keep navigation stable while scanning.
+- Added click-to-preview with in-app image preview and photo details.

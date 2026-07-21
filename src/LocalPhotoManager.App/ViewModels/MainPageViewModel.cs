@@ -52,6 +52,21 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial bool IsScanning { get; set; }
 
+    [ObservableProperty]
+    public partial BitmapImage? SelectedPreviewImage { get; set; }
+
+    [ObservableProperty]
+    public partial string SelectedFileName { get; set; } = "选择一张照片";
+
+    [ObservableProperty]
+    public partial string SelectedPath { get; set; } = "点击左侧列表中的图片以查看预览和详细信息。";
+
+    [ObservableProperty]
+    public partial string SelectedFolder { get; set; } = "尚未选择";
+
+    [ObservableProperty]
+    public partial string SelectedDetails { get; set; } = "尺寸、格式和大小会显示在这里。";
+
     [RelayCommand]
     private async Task ScanFolderAsync()
     {
@@ -117,6 +132,16 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void CancelScan() => scanCancellation?.Cancel();
+
+    public void SelectPhoto(PhotoListItem photo)
+    {
+        SelectedFileName = photo.FileName;
+        SelectedPath = photo.Path;
+        SelectedFolder = photo.FolderName;
+        SelectedDetails = $"{photo.DetailsLabel} · {photo.SizeLabel}";
+        SelectedPreviewImage = CreatePreviewImage(photo.Path);
+        StatusMessage = $"正在预览：{photo.FileName}";
+    }
 
     public async Task SelectViewAsync(string viewKey)
     {
@@ -415,6 +440,19 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         }
     }
 
+    private static BitmapImage? CreatePreviewImage(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        return new BitmapImage(new Uri(path, UriKind.Absolute))
+        {
+            DecodePixelWidth = 1200,
+        };
+    }
+
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "The scan of {FolderPath} failed.")]
     private static partial void LogScanFailed(ILogger logger, Exception exception, string folderPath);
 
@@ -434,11 +472,12 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     private static partial void LogWatcherChangeFailed(ILogger logger, Exception exception, string photoPath);
 }
 
-public sealed record PhotoListItem(string FileName, string Path, string SizeLabel, string DetailsLabel, BitmapImage? Thumbnail)
+public sealed record PhotoListItem(string FileName, string Path, string FolderName, string SizeLabel, string DetailsLabel, BitmapImage? Thumbnail)
 {
     public static PhotoListItem From(DiscoveredPhoto photo, ImageMetadata metadata, string? thumbnailPath) => new(
         photo.FileName,
         photo.Path,
+        GetFolderName(photo.Path),
         $"{photo.FileSize / 1024d / 1024d:0.0} MB",
         $"{metadata.Width} × {metadata.Height} · {metadata.MimeType}",
         CreateThumbnail(thumbnailPath));
@@ -453,6 +492,18 @@ public sealed record PhotoListItem(string FileName, string Path, string SizeLabe
         }
 
         return new BitmapImage(new Uri(thumbnailPath, UriKind.Absolute));
+    }
+
+    private static string GetFolderName(string path)
+    {
+        var directoryPath = System.IO.Path.GetDirectoryName(path);
+        if (string.IsNullOrWhiteSpace(directoryPath))
+        {
+            return "未知文件夹";
+        }
+
+        var folderName = System.IO.Path.GetFileName(directoryPath);
+        return string.IsNullOrWhiteSpace(folderName) ? directoryPath : folderName;
     }
 }
 
