@@ -11,3 +11,5 @@
 - Connected file watcher events to local index updates for created, changed, deleted, and renamed photos.
 - Added folder summaries, timeline month summaries, and UI navigation for browsing indexed photos.
 - Added a repeatable MSIX packaging script and produced a signed x64 test package.
+- Fixed the MSIX test certificate generation so sideload certificates include Basic Constraints.
+- Display generated thumbnails in the photo list and keep navigation stable while scanning.

@@ -6,6 +6,7 @@ using LocalPhotoManager.Core.Services;
 using LocalPhotoManager.Database;
 using LocalPhotoManager.Imaging;
 using Microsoft.Extensions.Logging;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage.Pickers;
 
 namespace LocalPhotoManager.App.ViewModels;
@@ -70,6 +71,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
         scanCancellation = new CancellationTokenSource();
         IsScanning = true;
+        ViewTitle = "照片";
         Photos.Clear();
         var count = 0;
         try
@@ -86,8 +88,8 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
                 }
 
                 await database.UpsertPhotoAsync(directoryPath, photo, metadata, scanCancellation.Token);
-                await TryGenerateThumbnailAsync(photo, scanCancellation.Token);
-                Photos.Add(PhotoListItem.From(photo, metadata));
+                var thumbnailPath = await TryGenerateThumbnailAsync(photo, scanCancellation.Token);
+                Photos.Add(PhotoListItem.From(photo, metadata, thumbnailPath));
                 count++;
                 StatusMessage = $"正在索引 {count:N0} 张图片…";
             }
@@ -118,6 +120,12 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     public async Task SelectViewAsync(string viewKey)
     {
+        if (IsScanning)
+        {
+            StatusMessage = "正在索引图片；完成或取消后再切换浏览视图。";
+            return;
+        }
+
         await database.InitializeAsync();
         switch (viewKey)
         {
@@ -150,7 +158,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     {
         await database.InitializeAsync();
         var indexedPhotos = await database.GetPhotosByDirectoryAsync(folder.Path);
-        ReplacePhotos(indexedPhotos);
+        await ReplacePhotosAsync(indexedPhotos);
         ViewTitle = folder.Name;
         StatusMessage = $"已显示文件夹中的 {indexedPhotos.Count:N0} 张图片。";
     }
@@ -159,7 +167,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     {
         await database.InitializeAsync();
         var indexedPhotos = await database.GetPhotosByMonthAsync(group.Year, group.Month);
-        ReplacePhotos(indexedPhotos);
+        await ReplacePhotosAsync(indexedPhotos);
         ViewTitle = group.Title;
         StatusMessage = $"已显示 {group.Title} 的 {indexedPhotos.Count:N0} 张图片。";
     }
@@ -261,8 +269,8 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         }
 
         await database.UpsertPhotoAsync(watchedDirectoryPath, photo, metadata);
-        await TryGenerateThumbnailAsync(photo, CancellationToken.None);
-        AddOrReplacePhoto(PhotoListItem.From(photo, metadata));
+        var thumbnailPath = await TryGenerateThumbnailAsync(photo, CancellationToken.None);
+        AddOrReplacePhoto(PhotoListItem.From(photo, metadata, thumbnailPath));
         StatusMessage = $"已更新本地索引：{photo.FileName}";
     }
 
@@ -345,7 +353,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     {
         ViewTitle = "照片";
         var indexedPhotos = await database.GetRecentPhotosAsync(cancellationToken: cancellationToken);
-        ReplacePhotos(indexedPhotos);
+        await ReplacePhotosAsync(indexedPhotos, cancellationToken);
         return indexedPhotos;
     }
 
@@ -366,12 +374,13 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void ReplacePhotos(IEnumerable<IndexedPhoto> indexedPhotos)
+    private async Task ReplacePhotosAsync(IEnumerable<IndexedPhoto> indexedPhotos, CancellationToken cancellationToken = default)
     {
         Photos.Clear();
         foreach (var indexedPhoto in indexedPhotos)
         {
-            Photos.Add(PhotoListItem.From(indexedPhoto));
+            var thumbnailPath = await TryGenerateThumbnailAsync(indexedPhoto.Photo, cancellationToken);
+            Photos.Add(PhotoListItem.From(indexedPhoto, thumbnailPath));
         }
     }
 
@@ -389,11 +398,11 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         watcher.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
-    private async Task TryGenerateThumbnailAsync(DiscoveredPhoto photo, CancellationToken cancellationToken)
+    private async Task<string?> TryGenerateThumbnailAsync(DiscoveredPhoto photo, CancellationToken cancellationToken)
     {
         try
         {
-            await thumbnailGenerator.GenerateAsync(photo, 256, cancellationToken);
+            return await thumbnailGenerator.GenerateAsync(photo, 256, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -402,6 +411,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         catch (Exception exception)
         {
             LogThumbnailFailed(logger, exception, photo.Path);
+            return null;
         }
     }
 
@@ -424,15 +434,26 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     private static partial void LogWatcherChangeFailed(ILogger logger, Exception exception, string photoPath);
 }
 
-public sealed record PhotoListItem(string FileName, string Path, string SizeLabel, string DetailsLabel)
+public sealed record PhotoListItem(string FileName, string Path, string SizeLabel, string DetailsLabel, BitmapImage? Thumbnail)
 {
-    public static PhotoListItem From(DiscoveredPhoto photo, ImageMetadata metadata) => new(
+    public static PhotoListItem From(DiscoveredPhoto photo, ImageMetadata metadata, string? thumbnailPath) => new(
         photo.FileName,
         photo.Path,
         $"{photo.FileSize / 1024d / 1024d:0.0} MB",
-        $"{metadata.Width} × {metadata.Height} · {metadata.MimeType}");
+        $"{metadata.Width} × {metadata.Height} · {metadata.MimeType}",
+        CreateThumbnail(thumbnailPath));
 
-    public static PhotoListItem From(IndexedPhoto indexedPhoto) => From(indexedPhoto.Photo, indexedPhoto.Metadata);
+    public static PhotoListItem From(IndexedPhoto indexedPhoto, string? thumbnailPath) => From(indexedPhoto.Photo, indexedPhoto.Metadata, thumbnailPath);
+
+    private static BitmapImage? CreateThumbnail(string? thumbnailPath)
+    {
+        if (string.IsNullOrWhiteSpace(thumbnailPath) || !File.Exists(thumbnailPath))
+        {
+            return null;
+        }
+
+        return new BitmapImage(new Uri(thumbnailPath, UriKind.Absolute));
+    }
 }
 
 public sealed record FolderSummaryItem(string Name, string Path, string CountLabel, string LatestLabel)

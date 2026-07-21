@@ -57,8 +57,11 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Border Width="48" Height="48" CornerRadius="4" Background="{ThemeResource AccentFillColorDefaultBrush}">
-                                    <FontIcon Glyph="&#xEB9F;" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Border Width="56" Height="56" CornerRadius="4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                                    <Grid>
+                                        <FontIcon Glyph="&#xEB9F;" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.55" />
+                                        <Image Source="{x:Bind Thumbnail, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Grid>
                                 </Border>
                                 <StackPanel Grid.Column="1" Spacing="2">
                                     <TextBlock Text="{x:Bind FileName}" Style="{StaticResource BodyStrongTextBlockStyle}" />

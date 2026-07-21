@@ -12,3 +12,5 @@
 - Connected debounced file-system changes to SQLite index updates and the visible photo list.
 - Added SQLite-backed folder and timeline browsing queries and connected them to the WinUI navigation surface.
 - Produced a signed x64 MSIX test package and zipped install folder under `E:\Picso\LocalPhotoManager\artifacts`.
+- Fixed the MSIX test certificate Basic Constraints issue and regenerated the signed x64 package.
+- Replaced photo-list placeholders with generated thumbnails and blocked navigation changes during active scans.
