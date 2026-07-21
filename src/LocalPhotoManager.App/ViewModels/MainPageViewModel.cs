@@ -38,6 +38,13 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<PhotoListItem> Photos { get; } = [];
 
+    public ObservableCollection<FolderSummaryItem> Folders { get; } = [];
+
+    public ObservableCollection<TimelineGroupItem> TimelineGroups { get; } = [];
+
+    [ObservableProperty]
+    public partial string ViewTitle { get; set; } = "照片";
+
     [ObservableProperty]
     public partial string StatusMessage { get; set; } = "选择一个文件夹以在本机创建图片索引。";
 
@@ -86,6 +93,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
             }
 
             StatusMessage = $"已在本机索引 {count:N0} 张图片。";
+            await RefreshSummariesAsync(scanCancellation.Token);
             StartWatching(directoryPath);
         }
         catch (OperationCanceledException)
@@ -107,6 +115,54 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void CancelScan() => scanCancellation?.Cancel();
+
+    public async Task SelectViewAsync(string viewKey)
+    {
+        await database.InitializeAsync();
+        switch (viewKey)
+        {
+            case "Folders":
+                ViewTitle = "文件夹";
+                await RefreshSummariesAsync();
+                StatusMessage = Folders.Count == 0
+                    ? "还没有可浏览的文件夹。先扫描一个图片文件夹。"
+                    : $"已整理 {Folders.Count:N0} 个本地文件夹。";
+                break;
+            case "Timeline":
+                ViewTitle = "时间线";
+                await RefreshSummariesAsync();
+                StatusMessage = TimelineGroups.Count == 0
+                    ? "还没有可浏览的时间线。先扫描一个图片文件夹。"
+                    : $"已按月份整理 {TimelineGroups.Count:N0} 段时间线。";
+                break;
+            case "Favorites":
+                ViewTitle = "收藏";
+                Photos.Clear();
+                StatusMessage = "收藏功能会在下一阶段接入；当前版本先保持本地索引浏览。";
+                break;
+            default:
+                await LoadRecentPhotosAsync();
+                break;
+        }
+    }
+
+    public async Task LoadFolderAsync(FolderSummaryItem folder)
+    {
+        await database.InitializeAsync();
+        var indexedPhotos = await database.GetPhotosByDirectoryAsync(folder.Path);
+        ReplacePhotos(indexedPhotos);
+        ViewTitle = folder.Name;
+        StatusMessage = $"已显示文件夹中的 {indexedPhotos.Count:N0} 张图片。";
+    }
+
+    public async Task LoadTimelineMonthAsync(TimelineGroupItem group)
+    {
+        await database.InitializeAsync();
+        var indexedPhotos = await database.GetPhotosByMonthAsync(group.Year, group.Month);
+        ReplacePhotos(indexedPhotos);
+        ViewTitle = group.Title;
+        StatusMessage = $"已显示 {group.Title} 的 {indexedPhotos.Count:N0} 张图片。";
+    }
 
     private void StartWatching(string directoryPath)
     {
@@ -147,6 +203,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
         try
         {
+            var summariesChanged = true;
             switch (change.Kind)
             {
                 case PhotoFileChangeKind.Created:
@@ -165,8 +222,14 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
                     await IndexPhotoPathAsync(change.Path);
                     break;
                 case PhotoFileChangeKind.RescanRequired:
+                    summariesChanged = false;
                     StatusMessage = "检测到大量文件变化，请重新扫描当前文件夹以校准本地索引。";
                     break;
+            }
+
+            if (summariesChanged)
+            {
+                await RefreshSummariesAsync();
             }
         }
         catch (Exception exception)
@@ -264,12 +327,8 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         try
         {
             await database.InitializeAsync();
-            var indexedPhotos = await database.GetRecentPhotosAsync();
-            Photos.Clear();
-            foreach (var indexedPhoto in indexedPhotos)
-            {
-                Photos.Add(PhotoListItem.From(indexedPhoto));
-            }
+            var indexedPhotos = await LoadRecentPhotosAsync();
+            await RefreshSummariesAsync();
 
             StatusMessage = indexedPhotos.Count == 0
                 ? "选择一个文件夹以在本机创建图片索引。"
@@ -279,6 +338,40 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         {
             LogLibraryLoadFailed(logger, exception);
             StatusMessage = "无法加载本地索引。详细信息已写入本地日志。";
+        }
+    }
+
+    private async Task<IReadOnlyList<IndexedPhoto>> LoadRecentPhotosAsync(CancellationToken cancellationToken = default)
+    {
+        ViewTitle = "照片";
+        var indexedPhotos = await database.GetRecentPhotosAsync(cancellationToken: cancellationToken);
+        ReplacePhotos(indexedPhotos);
+        return indexedPhotos;
+    }
+
+    private async Task RefreshSummariesAsync(CancellationToken cancellationToken = default)
+    {
+        var folders = await database.GetFolderSummariesAsync(cancellationToken);
+        Folders.Clear();
+        foreach (var folder in folders)
+        {
+            Folders.Add(FolderSummaryItem.From(folder));
+        }
+
+        var timelineGroups = await database.GetTimelineGroupsAsync(cancellationToken);
+        TimelineGroups.Clear();
+        foreach (var timelineGroup in timelineGroups)
+        {
+            TimelineGroups.Add(TimelineGroupItem.From(timelineGroup));
+        }
+    }
+
+    private void ReplacePhotos(IEnumerable<IndexedPhoto> indexedPhotos)
+    {
+        Photos.Clear();
+        foreach (var indexedPhoto in indexedPhotos)
+        {
+            Photos.Add(PhotoListItem.From(indexedPhoto));
         }
     }
 
@@ -340,4 +433,31 @@ public sealed record PhotoListItem(string FileName, string Path, string SizeLabe
         $"{metadata.Width} × {metadata.Height} · {metadata.MimeType}");
 
     public static PhotoListItem From(IndexedPhoto indexedPhoto) => From(indexedPhoto.Photo, indexedPhoto.Metadata);
+}
+
+public sealed record FolderSummaryItem(string Name, string Path, string CountLabel, string LatestLabel)
+{
+    public static FolderSummaryItem From(FolderSummary summary)
+    {
+        var name = System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(summary.DirectoryPath));
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = summary.DirectoryPath;
+        }
+
+        return new FolderSummaryItem(
+            name,
+            summary.DirectoryPath,
+            $"{summary.PhotoCount:N0} 张",
+            summary.LatestModifiedAtUtc is null ? "尚无时间" : summary.LatestModifiedAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+    }
+}
+
+public sealed record TimelineGroupItem(int Year, int Month, string Title, string CountLabel)
+{
+    public static TimelineGroupItem From(TimelineGroup group) => new(
+        group.Year,
+        group.Month,
+        $"{group.Year:D4}-{group.Month:D2}",
+        $"{group.PhotoCount:N0} 张");
 }

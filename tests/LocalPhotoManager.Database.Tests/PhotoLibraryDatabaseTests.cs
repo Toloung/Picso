@@ -40,6 +40,32 @@ public sealed class PhotoLibraryDatabaseTests : IDisposable
         Assert.Empty(await database.GetRecentPhotosAsync());
     }
 
+    [Fact]
+    public async Task FolderAndTimelineQueriesReturnIndexedGroups()
+    {
+        var database = new PhotoLibraryDatabase(Path.Combine(temporaryDirectory, "library.db"));
+        await database.InitializeAsync();
+        var firstTaken = new DateTimeOffset(2026, 7, 20, 10, 0, 0, TimeSpan.Zero);
+        var secondTaken = new DateTimeOffset(2026, 6, 15, 10, 0, 0, TimeSpan.Zero);
+        var firstPhoto = new DiscoveredPhoto("C:\\Photos\\A\\first.jpg", "first.jpg", ".jpg", 42, firstTaken, firstTaken);
+        var secondPhoto = new DiscoveredPhoto("C:\\Photos\\B\\second.jpg", "second.jpg", ".jpg", 64, secondTaken, secondTaken);
+
+        await database.UpsertPhotoAsync("C:\\Photos\\A", firstPhoto, new ImageMetadata("image/jpeg", 1920, 1080, null, firstTaken, null, null));
+        await database.UpsertPhotoAsync("C:\\Photos\\B", secondPhoto, new ImageMetadata("image/jpeg", 1080, 720, null, secondTaken, null, null));
+
+        var folders = await database.GetFolderSummariesAsync();
+        var timeline = await database.GetTimelineGroupsAsync();
+        var folderPhotos = await database.GetPhotosByDirectoryAsync("C:\\Photos\\A");
+        var julyPhotos = await database.GetPhotosByMonthAsync(2026, 7);
+
+        Assert.Equal(2, folders.Count);
+        Assert.Equal("C:\\Photos\\A", folders[0].DirectoryPath);
+        Assert.Equal("first.jpg", Assert.Single(folderPhotos).Photo.FileName);
+        Assert.Equal(2026, timeline[0].Year);
+        Assert.Equal(7, timeline[0].Month);
+        Assert.Equal("first.jpg", Assert.Single(julyPhotos).Photo.FileName);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(temporaryDirectory))

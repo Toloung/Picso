@@ -154,29 +154,132 @@ public sealed class PhotoLibraryDatabase
             LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$limit", limit);
+        return await ReadIndexedPhotosAsync(command, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<IndexedPhoto>> GetPhotosByDirectoryAsync(string directoryPath, int limit = 500, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directoryPath);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT p.path, p.file_name, p.extension, p.file_size, p.created_time, p.modified_time, p.mime_type, p.width, p.height, p.orientation, p.taken_time, p.camera_make, p.camera_model
+            FROM photos p
+            INNER JOIN directories d ON d.id = p.directory_id
+            WHERE p.is_missing = 0 AND d.path = $directoryPath
+            ORDER BY COALESCE(p.taken_time, p.modified_time) DESC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$directoryPath", directoryPath);
+        command.Parameters.AddWithValue("$limit", limit);
+        return await ReadIndexedPhotosAsync(command, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<IndexedPhoto>> GetPhotosByMonthAsync(int year, int month, int limit = 500, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(year, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(month, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(month, 12);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT path, file_name, extension, file_size, created_time, modified_time, mime_type, width, height, orientation, taken_time, camera_make, camera_model
+            FROM photos
+            WHERE is_missing = 0 AND substr(COALESCE(taken_time, modified_time), 1, 7) = $monthKey
+            ORDER BY COALESCE(taken_time, modified_time) DESC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$monthKey", $"{year:D4}-{month:D2}");
+        command.Parameters.AddWithValue("$limit", limit);
+        return await ReadIndexedPhotosAsync(command, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<FolderSummary>> GetFolderSummariesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT d.path, COUNT(p.id), MAX(p.modified_time)
+            FROM directories d
+            INNER JOIN photos p ON p.directory_id = d.id
+            WHERE p.is_missing = 0
+            GROUP BY d.id, d.path
+            ORDER BY MAX(COALESCE(p.taken_time, p.modified_time)) DESC;
+            """;
+        var folders = new List<FolderSummary>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            folders.Add(new FolderSummary(
+                reader.GetString(0),
+                Convert.ToInt32(reader.GetInt64(1), System.Globalization.CultureInfo.InvariantCulture),
+                reader.IsDBNull(2) ? null : DateTimeOffset.Parse(reader.GetString(2), System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        return folders;
+    }
+
+    public async Task<IReadOnlyList<TimelineGroup>> GetTimelineGroupsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT substr(COALESCE(taken_time, modified_time), 1, 7), COUNT(id)
+            FROM photos
+            WHERE is_missing = 0
+            GROUP BY substr(COALESCE(taken_time, modified_time), 1, 7)
+            ORDER BY substr(COALESCE(taken_time, modified_time), 1, 7) DESC;
+            """;
+        var groups = new List<TimelineGroup>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var monthKey = reader.GetString(0);
+            groups.Add(new TimelineGroup(
+                int.Parse(monthKey[..4], System.Globalization.CultureInfo.InvariantCulture),
+                int.Parse(monthKey[5..7], System.Globalization.CultureInfo.InvariantCulture),
+                Convert.ToInt32(reader.GetInt64(1), System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        return groups;
+    }
+
+    private static async Task<IReadOnlyList<IndexedPhoto>> ReadIndexedPhotosAsync(SqliteCommand command, CancellationToken cancellationToken)
+    {
         var photos = new List<IndexedPhoto>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var photo = new DiscoveredPhoto(
-                reader.GetString(0),
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.GetInt64(3),
-                DateTimeOffset.Parse(reader.GetString(4), System.Globalization.CultureInfo.InvariantCulture),
-                DateTimeOffset.Parse(reader.GetString(5), System.Globalization.CultureInfo.InvariantCulture));
-            var metadata = new ImageMetadata(
-                reader.IsDBNull(6) ? "application/octet-stream" : reader.GetString(6),
-                reader.IsDBNull(7) ? 0 : Convert.ToUInt32(reader.GetInt64(7), System.Globalization.CultureInfo.InvariantCulture),
-                reader.IsDBNull(8) ? 0 : Convert.ToUInt32(reader.GetInt64(8), System.Globalization.CultureInfo.InvariantCulture),
-                reader.IsDBNull(9) ? null : reader.GetInt32(9),
-                reader.IsDBNull(10) ? null : DateTimeOffset.Parse(reader.GetString(10), System.Globalization.CultureInfo.InvariantCulture),
-                reader.IsDBNull(11) ? null : reader.GetString(11),
-                reader.IsDBNull(12) ? null : reader.GetString(12));
-            photos.Add(new IndexedPhoto(photo, metadata));
+            photos.Add(ReadIndexedPhoto(reader));
         }
 
         return photos;
+    }
+
+    private static IndexedPhoto ReadIndexedPhoto(SqliteDataReader reader)
+    {
+        var photo = new DiscoveredPhoto(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetInt64(3),
+            DateTimeOffset.Parse(reader.GetString(4), System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(reader.GetString(5), System.Globalization.CultureInfo.InvariantCulture));
+        var metadata = new ImageMetadata(
+            reader.IsDBNull(6) ? "application/octet-stream" : reader.GetString(6),
+            reader.IsDBNull(7) ? 0 : Convert.ToUInt32(reader.GetInt64(7), System.Globalization.CultureInfo.InvariantCulture),
+            reader.IsDBNull(8) ? 0 : Convert.ToUInt32(reader.GetInt64(8), System.Globalization.CultureInfo.InvariantCulture),
+            reader.IsDBNull(9) ? null : reader.GetInt32(9),
+            reader.IsDBNull(10) ? null : DateTimeOffset.Parse(reader.GetString(10), System.Globalization.CultureInfo.InvariantCulture),
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12));
+        return new IndexedPhoto(photo, metadata);
     }
 
     private static async Task ApplyMetadataMigrationAsync(SqliteConnection connection, CancellationToken cancellationToken)

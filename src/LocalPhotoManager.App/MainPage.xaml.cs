@@ -19,4 +19,28 @@ public sealed partial class MainPage : Page
         InitializeComponent();
         Loaded += async (_, _) => await ViewModel.LoadAsync();
     }
+
+    private async void OnNavigationSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        if (args.SelectedItemContainer?.Tag is string viewKey)
+        {
+            await ViewModel.SelectViewAsync(viewKey);
+        }
+    }
+
+    private async void OnFolderItemClick(object sender, ItemClickEventArgs args)
+    {
+        if (args.ClickedItem is FolderSummaryItem folder)
+        {
+            await ViewModel.LoadFolderAsync(folder);
+        }
+    }
+
+    private async void OnTimelineItemClick(object sender, ItemClickEventArgs args)
+    {
+        if (args.ClickedItem is TimelineGroupItem group)
+        {
+            await ViewModel.LoadTimelineMonthAsync(group);
+        }
+    }
 }

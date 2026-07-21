@@ -9,3 +9,4 @@
 - Added Windows-native thumbnail generation and a debounced FileSystemWatcher service.
 - Added content validation, EXIF-oriented metadata extraction, database migration v2, and startup index restoration.
 - Connected file watcher events to local index updates for created, changed, deleted, and renamed photos.
+- Added folder summaries, timeline month summaries, and UI navigation for browsing indexed photos.

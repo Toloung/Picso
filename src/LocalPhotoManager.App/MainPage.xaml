@@ -9,12 +9,13 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <NavigationView PaneDisplayMode="Left" IsBackButtonVisible="Collapsed" PaneTitle="Local Photo Manager">
+    <NavigationView PaneDisplayMode="Left" IsBackButtonVisible="Collapsed" PaneTitle="Local Photo Manager"
+                    SelectionChanged="OnNavigationSelectionChanged">
         <NavigationView.MenuItems>
-            <NavigationViewItem Content="照片" Icon="Pictures" IsSelected="True" />
-            <NavigationViewItem Content="文件夹" Icon="Folder" />
-            <NavigationViewItem Content="时间线" Icon="Calendar" />
-            <NavigationViewItem Content="收藏" Icon="Favorite" />
+            <NavigationViewItem Content="照片" Icon="Pictures" IsSelected="True" Tag="Photos" />
+            <NavigationViewItem Content="文件夹" Icon="Folder" Tag="Folders" />
+            <NavigationViewItem Content="时间线" Icon="Calendar" Tag="Timeline" />
+            <NavigationViewItem Content="收藏" Icon="Favorite" Tag="Favorites" />
         </NavigationView.MenuItems>
         <Grid Padding="24" RowSpacing="16">
             <Grid.RowDefinitions>
@@ -28,7 +29,7 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Spacing="6">
-                <TextBlock Text="本地照片库" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="{x:Bind ViewModel.ViewTitle, Mode=OneWay}" Style="{StaticResource TitleTextBlockStyle}" />
                 <TextBlock Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}" Opacity="0.7" TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
@@ -40,29 +41,84 @@
             <InfoBar Grid.Row="1" Grid.ColumnSpan="2" IsOpen="True" IsClosable="False" Severity="Informational"
                      Title="隐私优先" Message="图片只会在本机索引；扫描不会修改、移动或上传原始文件。" />
 
-            <ListView Grid.Row="2" Grid.ColumnSpan="2" ItemsSource="{x:Bind ViewModel.Photos, Mode=OneWay}"
-                      SelectionMode="Multiple" IsItemClickEnabled="True">
-                <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="viewModels:PhotoListItem">
-                        <Grid Padding="8" ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="56" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Border Width="48" Height="48" CornerRadius="4" Background="{ThemeResource AccentFillColorDefaultBrush}">
-                                <FontIcon Glyph="&#xEB9F;" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Spacing="2">
-                                <TextBlock Text="{x:Bind FileName}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                <TextBlock Text="{x:Bind Path}" Opacity="0.65" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{x:Bind DetailsLabel}" Opacity="0.65" />
-                            </StackPanel>
-                            <TextBlock Grid.Column="2" Text="{x:Bind SizeLabel}" VerticalAlignment="Center" Opacity="0.65" />
-                        </Grid>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
+            <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="320" />
+                </Grid.ColumnDefinitions>
+
+                <ListView ItemsSource="{x:Bind ViewModel.Photos, Mode=OneWay}"
+                          SelectionMode="Multiple" IsItemClickEnabled="True">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="viewModels:PhotoListItem">
+                            <Grid Padding="8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="56" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48" Height="48" CornerRadius="4" Background="{ThemeResource AccentFillColorDefaultBrush}">
+                                    <FontIcon Glyph="&#xEB9F;" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="{x:Bind FileName}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="{x:Bind Path}" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind DetailsLabel}" Opacity="0.65" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="2" Text="{x:Bind SizeLabel}" VerticalAlignment="Center" Opacity="0.65" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <ScrollViewer Grid.Column="1">
+                    <StackPanel Spacing="16">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="文件夹" Style="{StaticResource SubtitleTextBlockStyle}" />
+                            <ListView ItemsSource="{x:Bind ViewModel.Folders, Mode=OneWay}"
+                                      SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnFolderItemClick">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="viewModels:FolderSummaryItem">
+                                        <Grid Padding="8" ColumnSpacing="8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{x:Bind Path}" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                <TextBlock Text="{x:Bind CountLabel}" HorizontalAlignment="Right" />
+                                                <TextBlock Text="{x:Bind LatestLabel}" HorizontalAlignment="Right" Opacity="0.65" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </StackPanel>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="时间线" Style="{StaticResource SubtitleTextBlockStyle}" />
+                            <ListView ItemsSource="{x:Bind ViewModel.TimelineGroups, Mode=OneWay}"
+                                      SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnTimelineItemClick">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="viewModels:TimelineGroupItem">
+                                        <Grid Padding="8" ColumnSpacing="8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{x:Bind Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind CountLabel}" Opacity="0.65" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
         </Grid>
     </NavigationView>
 </Page>
