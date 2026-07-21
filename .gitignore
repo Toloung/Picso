@@ -9,5 +9,5 @@ thumbnails/
 cache/
 logs/
 settings.json
-models/
+/models/
 backups/
