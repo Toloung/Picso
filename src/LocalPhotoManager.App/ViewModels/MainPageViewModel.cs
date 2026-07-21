@@ -6,6 +6,7 @@ using LocalPhotoManager.Core.Services;
 using LocalPhotoManager.Database;
 using LocalPhotoManager.Imaging;
 using Microsoft.Extensions.Logging;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage.Pickers;
 
@@ -20,6 +21,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     private readonly ILogger<MainPageViewModel> logger;
     private CancellationTokenSource? scanCancellation;
     private string? watchedDirectoryPath;
+    private int selectedPhotoIndex = -1;
     private bool disposed;
 
     public MainPageViewModel(
@@ -67,6 +69,18 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial string SelectedDetails { get; set; } = "尺寸、格式和大小会显示在这里。";
 
+    [ObservableProperty]
+    public partial string SelectedDate { get; set; } = "日期：尚未选择";
+
+    [ObservableProperty]
+    public partial string SelectedCamera { get; set; } = "相机：尚未选择";
+
+    [ObservableProperty]
+    public partial Visibility InformationPaneVisibility { get; set; } = Visibility.Visible;
+
+    [ObservableProperty]
+    public partial GridLength InformationPaneWidth { get; set; } = new(320);
+
     [RelayCommand]
     private async Task ScanFolderAsync()
     {
@@ -92,7 +106,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         try
         {
             await database.InitializeAsync(scanCancellation.Token);
-            var directoryPath = PathPolicy.NormalizePath(folder.Path);
+            var scanRootPath = PathPolicy.NormalizePath(folder.Path);
             await foreach (var photo in scanner.ScanAsync(new ScanRequest(folder.Path), scanCancellation.Token))
             {
                 var metadata = await WindowsImageMetadataReader.TryReadAsync(photo, scanCancellation.Token);
@@ -102,16 +116,22 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
                     continue;
                 }
 
-                await database.UpsertPhotoAsync(directoryPath, photo, metadata, scanCancellation.Token);
+                await database.UpsertPhotoAsync(GetPhotoDirectoryPath(photo), photo, metadata, scanCancellation.Token);
                 var thumbnailPath = await TryGenerateThumbnailAsync(photo, scanCancellation.Token);
-                Photos.Add(PhotoListItem.From(photo, metadata, thumbnailPath));
+                var photoItem = PhotoListItem.From(photo, metadata, thumbnailPath);
+                Photos.Add(photoItem);
+                if (selectedPhotoIndex < 0)
+                {
+                    SelectPhoto(photoItem);
+                }
+
                 count++;
                 StatusMessage = $"正在索引 {count:N0} 张图片…";
             }
 
             StatusMessage = $"已在本机索引 {count:N0} 张图片。";
             await RefreshSummariesAsync(scanCancellation.Token);
-            StartWatching(directoryPath);
+            StartWatching(scanRootPath);
         }
         catch (OperationCanceledException)
         {
@@ -135,12 +155,35 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     public void SelectPhoto(PhotoListItem photo)
     {
+        selectedPhotoIndex = Photos.IndexOf(photo);
         SelectedFileName = photo.FileName;
         SelectedPath = photo.Path;
         SelectedFolder = photo.FolderName;
         SelectedDetails = $"{photo.DetailsLabel} · {photo.SizeLabel}";
+        SelectedDate = photo.DateLabel;
+        SelectedCamera = photo.CameraLabel;
         SelectedPreviewImage = CreatePreviewImage(photo.Path);
         StatusMessage = $"正在预览：{photo.FileName}";
+    }
+
+    [RelayCommand]
+    private void SelectPreviousPhoto() => SelectRelativePhoto(-1);
+
+    [RelayCommand]
+    private void SelectNextPhoto() => SelectRelativePhoto(1);
+
+    [RelayCommand]
+    private void ToggleInformationPane()
+    {
+        if (InformationPaneVisibility == Visibility.Visible)
+        {
+            InformationPaneVisibility = Visibility.Collapsed;
+            InformationPaneWidth = new GridLength(0);
+            return;
+        }
+
+        InformationPaneVisibility = Visibility.Visible;
+        InformationPaneWidth = new GridLength(320);
     }
 
     public async Task SelectViewAsync(string viewKey)
@@ -293,7 +336,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
             return;
         }
 
-        await database.UpsertPhotoAsync(watchedDirectoryPath, photo, metadata);
+        await database.UpsertPhotoAsync(GetPhotoDirectoryPath(photo), photo, metadata);
         var thumbnailPath = await TryGenerateThumbnailAsync(photo, CancellationToken.None);
         AddOrReplacePhoto(PhotoListItem.From(photo, metadata, thumbnailPath));
         StatusMessage = $"已更新本地索引：{photo.FileName}";
@@ -338,6 +381,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     {
         RemovePhoto(photo.Path);
         Photos.Insert(0, photo);
+        SelectPhoto(photo);
     }
 
     private bool RemovePhoto(string path)
@@ -407,6 +451,39 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
             var thumbnailPath = await TryGenerateThumbnailAsync(indexedPhoto.Photo, cancellationToken);
             Photos.Add(PhotoListItem.From(indexedPhoto, thumbnailPath));
         }
+
+        if (Photos.Count > 0)
+        {
+            SelectPhoto(Photos[0]);
+        }
+        else
+        {
+            ClearSelection();
+        }
+    }
+
+    private void SelectRelativePhoto(int offset)
+    {
+        if (Photos.Count == 0)
+        {
+            ClearSelection();
+            return;
+        }
+
+        var nextIndex = selectedPhotoIndex < 0 ? 0 : Math.Clamp(selectedPhotoIndex + offset, 0, Photos.Count - 1);
+        SelectPhoto(Photos[nextIndex]);
+    }
+
+    private void ClearSelection()
+    {
+        selectedPhotoIndex = -1;
+        SelectedPreviewImage = null;
+        SelectedFileName = "选择一张照片";
+        SelectedPath = "点击底部缩略图或左侧文件夹中的图片以查看预览和详细信息。";
+        SelectedFolder = "尚未选择";
+        SelectedDetails = "尺寸、格式和大小会显示在这里。";
+        SelectedDate = "日期：尚未选择";
+        SelectedCamera = "相机：尚未选择";
     }
 
     public void Dispose()
@@ -453,6 +530,12 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         };
     }
 
+    private static string GetPhotoDirectoryPath(DiscoveredPhoto photo)
+    {
+        var directoryPath = Path.GetDirectoryName(photo.Path);
+        return PathPolicy.NormalizePath(string.IsNullOrWhiteSpace(directoryPath) ? photo.Path : directoryPath);
+    }
+
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "The scan of {FolderPath} failed.")]
     private static partial void LogScanFailed(ILogger logger, Exception exception, string folderPath);
 
@@ -472,7 +555,15 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     private static partial void LogWatcherChangeFailed(ILogger logger, Exception exception, string photoPath);
 }
 
-public sealed record PhotoListItem(string FileName, string Path, string FolderName, string SizeLabel, string DetailsLabel, BitmapImage? Thumbnail)
+public sealed record PhotoListItem(
+    string FileName,
+    string Path,
+    string FolderName,
+    string SizeLabel,
+    string DetailsLabel,
+    string DateLabel,
+    string CameraLabel,
+    BitmapImage? Thumbnail)
 {
     public static PhotoListItem From(DiscoveredPhoto photo, ImageMetadata metadata, string? thumbnailPath) => new(
         photo.FileName,
@@ -480,6 +571,12 @@ public sealed record PhotoListItem(string FileName, string Path, string FolderNa
         GetFolderName(photo.Path),
         $"{photo.FileSize / 1024d / 1024d:0.0} MB",
         $"{metadata.Width} × {metadata.Height} · {metadata.MimeType}",
+        metadata.TakenAtUtc is null
+            ? $"修改：{photo.ModifiedAtUtc.LocalDateTime:yyyy-MM-dd HH:mm}"
+            : $"拍摄：{metadata.TakenAtUtc.Value.LocalDateTime:yyyy-MM-dd HH:mm}",
+        string.IsNullOrWhiteSpace(metadata.CameraMake) && string.IsNullOrWhiteSpace(metadata.CameraModel)
+            ? "相机：未知"
+            : $"相机：{metadata.CameraMake} {metadata.CameraModel}".TrimEnd(),
         CreateThumbnail(thumbnailPath));
 
     public static PhotoListItem From(IndexedPhoto indexedPhoto, string? thumbnailPath) => From(indexedPhoto.Photo, indexedPhoto.Metadata, thumbnailPath);

@@ -78,6 +78,7 @@ public sealed class PhotoLibraryDatabase
                 INSERT INTO photos(directory_id, path, file_name, extension, mime_type, file_size, created_time, modified_time, taken_time, width, height, orientation, camera_make, camera_model, indexed_at, updated_at)
                 VALUES ((SELECT id FROM directories WHERE path = $directoryPath), $path, $fileName, $extension, $mimeType, $fileSize, $createdAt, $modifiedAt, $takenAt, $width, $height, $orientation, $cameraMake, $cameraModel, $now, $now)
                 ON CONFLICT(path) DO UPDATE SET
+                    directory_id = excluded.directory_id,
                     file_name = excluded.file_name,
                     extension = excluded.extension,
                     mime_type = excluded.mime_type,

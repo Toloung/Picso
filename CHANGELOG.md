@@ -14,3 +14,5 @@
 - Fixed the MSIX test certificate generation so sideload certificates include Basic Constraints.
 - Display generated thumbnails in the photo list and keep navigation stable while scanning.
 - Added click-to-preview with in-app image preview and photo details.
+- Reworked the main layout with a top menu, left library/sidebar, large preview canvas, bottom filmstrip, navigation arrows, and a toggleable info pane.
+- Store indexed photos under their actual parent folders so subfolder browsing works after rescans.

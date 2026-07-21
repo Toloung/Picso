@@ -1,5 +1,6 @@
 using LocalPhotoManager.App.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 // To learn more about WinUI, the WinUI project structure,
@@ -27,6 +28,14 @@ public sealed partial class MainPage : Page
             await ViewModel.SelectViewAsync(viewKey);
         }
     }
+
+    private async void OnPhotosClick(object sender, RoutedEventArgs args) => await ViewModel.SelectViewAsync("Photos");
+
+    private async void OnFoldersClick(object sender, RoutedEventArgs args) => await ViewModel.SelectViewAsync("Folders");
+
+    private async void OnTimelineClick(object sender, RoutedEventArgs args) => await ViewModel.SelectViewAsync("Timeline");
+
+    private async void OnFavoritesClick(object sender, RoutedEventArgs args) => await ViewModel.SelectViewAsync("Favorites");
 
     private void OnPhotoItemClick(object sender, ItemClickEventArgs args)
     {
