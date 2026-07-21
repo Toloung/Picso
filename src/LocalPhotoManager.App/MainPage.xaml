@@ -69,34 +69,6 @@
         <ScrollViewer Grid.Row="2" Grid.RowSpan="2" Grid.Column="0" Padding="12,0,12,12">
             <StackPanel Spacing="16">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="功能" Opacity="0.65" />
-                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OnPhotosClick">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xEB9F;" />
-                            <TextBlock Text="全部照片" />
-                        </StackPanel>
-                    </Button>
-                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OnFoldersClick">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE8B7;" />
-                            <TextBlock Text="文件夹" />
-                        </StackPanel>
-                    </Button>
-                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OnTimelineClick">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE787;" />
-                            <TextBlock Text="时间线" />
-                        </StackPanel>
-                    </Button>
-                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OnFavoritesClick">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE734;" />
-                            <TextBlock Text="收藏" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-
-                <StackPanel Spacing="8">
                     <TextBlock Text="文件夹和子文件夹" Opacity="0.65" />
                     <ListView ItemsSource="{x:Bind ViewModel.Folders, Mode=OneWay}"
                               SelectionMode="Single" IsItemClickEnabled="True" ItemClick="OnFolderItemClick">

@@ -35,8 +35,6 @@ public sealed partial class MainPage : Page
 
     private async void OnTimelineClick(object sender, RoutedEventArgs args) => await ViewModel.SelectViewAsync("Timeline");
 
-    private async void OnFavoritesClick(object sender, RoutedEventArgs args) => await ViewModel.SelectViewAsync("Favorites");
-
     private void OnPhotoItemClick(object sender, ItemClickEventArgs args)
     {
         if (args.ClickedItem is PhotoListItem photo)

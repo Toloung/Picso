@@ -16,3 +16,4 @@
 - Added click-to-preview with in-app image preview and photo details.
 - Reworked the main layout with a top menu, left library/sidebar, large preview canvas, bottom filmstrip, navigation arrows, and a toggleable info pane.
 - Store indexed photos under their actual parent folders so subfolder browsing works after rescans.
+- Removed redundant large sidebar function buttons so the sidebar focuses on folders and timeline browsing.

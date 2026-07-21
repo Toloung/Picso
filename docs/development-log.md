@@ -17,3 +17,4 @@
 - Added in-app click preview with file name, folder, path, image dimensions, MIME type, and size.
 - Reworked the WinUI shell into a photo-browser layout with top menu, left function/folder sidebar, central preview, bottom filmstrip, previous/next controls, and a toggleable information pane.
 - Changed indexing to store each photo against its actual parent folder and added a regression test for moving existing rows from a scan root to a subfolder.
+- Removed the low-value sidebar function button group and kept the left rail focused on folders, subfolders, and timeline groups.
