@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "LocalPhotoManager.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "LocalPhotoManager.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
