@@ -6,3 +6,4 @@
 - Added local SQLite schema initialization and photo upsert support.
 - Added cancellable local file scanning and path policy tests.
 - Added a local-library UI shell with folder selection and scan status.
+- Added Windows-native thumbnail generation and a debounced FileSystemWatcher service.

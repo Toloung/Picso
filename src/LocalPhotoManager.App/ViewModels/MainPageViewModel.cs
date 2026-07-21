@@ -14,19 +14,19 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 {
     private readonly IPhotoScanner scanner;
     private readonly PhotoLibraryDatabase database;
-    private readonly ThumbnailPathFactory thumbnailPathFactory;
+    private readonly WindowsThumbnailGenerator thumbnailGenerator;
     private readonly ILogger<MainPageViewModel> logger;
     private CancellationTokenSource? scanCancellation;
 
     public MainPageViewModel(
         IPhotoScanner scanner,
         PhotoLibraryDatabase database,
-        ThumbnailPathFactory thumbnailPathFactory,
+        WindowsThumbnailGenerator thumbnailGenerator,
         ILogger<MainPageViewModel> logger)
     {
         this.scanner = scanner;
         this.database = database;
-        this.thumbnailPathFactory = thumbnailPathFactory;
+        this.thumbnailGenerator = thumbnailGenerator;
         this.logger = logger;
     }
 
@@ -66,7 +66,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
             await foreach (var photo in scanner.ScanAsync(new ScanRequest(folder.Path), scanCancellation.Token))
             {
                 await database.UpsertPhotoAsync(directoryPath, photo, scanCancellation.Token);
-                _ = thumbnailPathFactory.GetThumbnailPath(photo, 256);
+                await TryGenerateThumbnailAsync(photo, scanCancellation.Token);
                 Photos.Add(PhotoListItem.From(photo));
                 count++;
                 StatusMessage = $"正在索引 {count:N0} 张图片…";
@@ -100,8 +100,27 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         scanCancellation?.Dispose();
     }
 
+    private async Task TryGenerateThumbnailAsync(DiscoveredPhoto photo, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await thumbnailGenerator.GenerateAsync(photo, 256, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            LogThumbnailFailed(logger, exception, photo.Path);
+        }
+    }
+
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "The scan of {FolderPath} failed.")]
     private static partial void LogScanFailed(ILogger logger, Exception exception, string folderPath);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Thumbnail generation failed for {PhotoPath}.")]
+    private static partial void LogThumbnailFailed(ILogger logger, Exception exception, string photoPath);
 }
 
 public sealed record PhotoListItem(string FileName, string Path, string SizeLabel)

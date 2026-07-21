@@ -64,7 +64,9 @@ public partial class App : Application
             return new PhotoLibraryDatabase(paths.DatabasePath);
         });
         builder.Services.AddSingleton<IPhotoScanner, FileSystemPhotoScanner>();
+        builder.Services.AddSingleton<IPhotoFileWatcher, DebouncedPhotoFileWatcher>();
         builder.Services.AddSingleton<ThumbnailPathFactory>();
+        builder.Services.AddSingleton<WindowsThumbnailGenerator>();
         builder.Services.AddSingleton<MainPageViewModel>();
         return builder.Build();
     }
