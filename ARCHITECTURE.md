@@ -15,3 +15,7 @@
 `FolderPicker` → `IPhotoScanner` → `PhotoLibraryDatabase` → `ThumbnailPathFactory` → UI list.
 
 The application data root is `%LOCALAPPDATA%\LocalPhotoManager`. It contains the database, thumbnails, logs and future cache/model/backup files. No service, account, upload or telemetry component is part of this architecture.
+
+## Reference boundaries
+
+PhotoPrism and Immich may inform product behavior and architecture decisions, such as in-place indexing, incremental scans, timeline grouping, virtualized galleries, and future local face grouping. This project does not copy, merge, or directly depend on either project: it remains an independently implemented C# / WinUI desktop application with no server, Docker deployment, or online API.

@@ -14,10 +14,14 @@ public sealed class PhotoLibraryDatabaseTests : IDisposable
         await database.InitializeAsync();
         var photo = new DiscoveredPhoto("C:\\Photos\\sample.jpg", "sample.jpg", ".jpg", 42, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
-        await database.UpsertPhotoAsync("C:\\Photos", photo);
-        await database.UpsertPhotoAsync("C:\\Photos", photo with { FileSize = 64 });
+        var metadata = new ImageMetadata("image/jpeg", 1920, 1080, 1, DateTimeOffset.UtcNow, "Camera", "Model");
+        await database.UpsertPhotoAsync("C:\\Photos", photo, metadata);
+        await database.UpsertPhotoAsync("C:\\Photos", photo with { FileSize = 64 }, metadata);
 
         Assert.Equal(1, await database.GetPhotoCountAsync());
+        var storedPhoto = Assert.Single(await database.GetRecentPhotosAsync());
+        Assert.Equal((uint)1920, storedPhoto.Metadata.Width);
+        Assert.Equal("Camera", storedPhoto.Metadata.CameraMake);
     }
 
     public void Dispose()

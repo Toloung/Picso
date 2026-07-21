@@ -65,9 +65,16 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
             var directoryPath = PathPolicy.NormalizePath(folder.Path);
             await foreach (var photo in scanner.ScanAsync(new ScanRequest(folder.Path), scanCancellation.Token))
             {
-                await database.UpsertPhotoAsync(directoryPath, photo, scanCancellation.Token);
+                var metadata = await WindowsImageMetadataReader.TryReadAsync(photo, scanCancellation.Token);
+                if (metadata is null)
+                {
+                    LogInvalidImageSkipped(logger, photo.Path);
+                    continue;
+                }
+
+                await database.UpsertPhotoAsync(directoryPath, photo, metadata, scanCancellation.Token);
                 await TryGenerateThumbnailAsync(photo, scanCancellation.Token);
-                Photos.Add(PhotoListItem.From(photo));
+                Photos.Add(PhotoListItem.From(photo, metadata));
                 count++;
                 StatusMessage = $"正在索引 {count:N0} 张图片…";
             }
@@ -93,6 +100,29 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void CancelScan() => scanCancellation?.Cancel();
+
+    public async Task LoadAsync()
+    {
+        try
+        {
+            await database.InitializeAsync();
+            var indexedPhotos = await database.GetRecentPhotosAsync();
+            Photos.Clear();
+            foreach (var indexedPhoto in indexedPhotos)
+            {
+                Photos.Add(PhotoListItem.From(indexedPhoto));
+            }
+
+            StatusMessage = indexedPhotos.Count == 0
+                ? "选择一个文件夹以在本机创建图片索引。"
+                : $"已加载本地索引中的 {indexedPhotos.Count:N0} 张图片。";
+        }
+        catch (Exception exception)
+        {
+            LogLibraryLoadFailed(logger, exception);
+            StatusMessage = "无法加载本地索引。详细信息已写入本地日志。";
+        }
+    }
 
     public void Dispose()
     {
@@ -121,12 +151,21 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Thumbnail generation failed for {PhotoPath}.")]
     private static partial void LogThumbnailFailed(ILogger logger, Exception exception, string photoPath);
+
+    [LoggerMessage(EventId = 3, Level = LogLevel.Warning, Message = "Skipped an unsupported or corrupted image file: {PhotoPath}.")]
+    private static partial void LogInvalidImageSkipped(ILogger logger, string photoPath);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "Loading the local photo index failed.")]
+    private static partial void LogLibraryLoadFailed(ILogger logger, Exception exception);
 }
 
-public sealed record PhotoListItem(string FileName, string Path, string SizeLabel)
+public sealed record PhotoListItem(string FileName, string Path, string SizeLabel, string DetailsLabel)
 {
-    public static PhotoListItem From(DiscoveredPhoto photo) => new(
+    public static PhotoListItem From(DiscoveredPhoto photo, ImageMetadata metadata) => new(
         photo.FileName,
         photo.Path,
-        $"{photo.FileSize / 1024d / 1024d:0.0} MB");
+        $"{photo.FileSize / 1024d / 1024d:0.0} MB",
+        $"{metadata.Width} × {metadata.Height} · {metadata.MimeType}");
+
+    public static PhotoListItem From(IndexedPhoto indexedPhoto) => From(indexedPhoto.Photo, indexedPhoto.Metadata);
 }
