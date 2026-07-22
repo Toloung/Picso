@@ -8,7 +8,9 @@ using LocalPhotoManager.Imaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Storage;
 using Windows.Storage.Pickers;
+using Windows.System;
 
 namespace LocalPhotoManager.App.ViewModels;
 
@@ -37,6 +39,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         this.thumbnailGenerator = thumbnailGenerator;
         this.logger = logger;
         this.watcher.FileChanged += OnFileChanged;
+        Photos.CollectionChanged += (_, _) => UpdateSelectedPositionLabel();
     }
 
     public ObservableCollection<PhotoListItem> Photos { get; } = [];
@@ -61,6 +64,9 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     public partial BitmapImage? SelectedPreviewImage { get; set; }
 
     [ObservableProperty]
+    public partial PhotoListItem? SelectedPhoto { get; set; }
+
+    [ObservableProperty]
     public partial string SelectedFileName { get; set; } = "选择一张照片";
 
     [ObservableProperty]
@@ -77,6 +83,9 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     public partial string SelectedCamera { get; set; } = "相机：尚未选择";
+
+    [ObservableProperty]
+    public partial string SelectedPositionLabel { get; set; } = "0 / 0";
 
     [ObservableProperty]
     public partial Visibility InformationPaneVisibility { get; set; } = Visibility.Visible;
@@ -159,6 +168,12 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     public void SelectPhoto(PhotoListItem photo)
     {
         selectedPhotoIndex = Photos.IndexOf(photo);
+        if (selectedPhotoIndex < 0)
+        {
+            return;
+        }
+
+        SelectedPhoto = photo;
         SelectedFileName = photo.FileName;
         SelectedPath = photo.Path;
         SelectedFolder = photo.FolderName;
@@ -166,7 +181,25 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         SelectedDate = photo.DateLabel;
         SelectedCamera = photo.CameraLabel;
         SelectedPreviewImage = CreatePreviewImage(photo.Path);
+        UpdateSelectedPositionLabel();
         StatusMessage = $"正在预览：{photo.FileName}";
+    }
+
+    partial void OnSelectedPhotoChanged(PhotoListItem? value)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        if (selectedPhotoIndex >= 0 &&
+            selectedPhotoIndex < Photos.Count &&
+            ReferenceEquals(Photos[selectedPhotoIndex], value))
+        {
+            return;
+        }
+
+        SelectPhoto(value);
     }
 
     [RelayCommand]
@@ -174,6 +207,62 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     private void SelectNextPhoto() => SelectRelativePhoto(1);
+
+    [RelayCommand]
+    private async Task OpenSelectedPhotoAsync()
+    {
+        if (SelectedPhoto is null || !File.Exists(SelectedPhoto.Path))
+        {
+            StatusMessage = "先选中一张照片，再打开原图。";
+            return;
+        }
+
+        try
+        {
+            var file = await StorageFile.GetFileFromPathAsync(SelectedPhoto.Path);
+            var launched = await Launcher.LaunchFileAsync(file);
+            StatusMessage = launched
+                ? $"已打开原图：{SelectedPhoto.FileName}"
+                : "系统没有打开这张照片；请检查默认图片应用。";
+        }
+        catch (Exception exception)
+        {
+            LogLaunchFailed(logger, exception, SelectedPhoto.Path);
+            StatusMessage = "打开原图失败。详细信息已写入本地日志。";
+        }
+    }
+
+    [RelayCommand]
+    private async Task RevealSelectedPhotoAsync()
+    {
+        if (SelectedPhoto is null || !File.Exists(SelectedPhoto.Path))
+        {
+            StatusMessage = "先选中一张照片，再打开所在文件夹。";
+            return;
+        }
+
+        var directoryPath = Path.GetDirectoryName(SelectedPhoto.Path);
+        if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+        {
+            StatusMessage = "无法找到这张照片所在的文件夹。";
+            return;
+        }
+
+        try
+        {
+            var options = new FolderLauncherOptions();
+            options.ItemsToSelect.Add(await StorageFile.GetFileFromPathAsync(SelectedPhoto.Path));
+            var launched = await Launcher.LaunchFolderPathAsync(directoryPath, options);
+            StatusMessage = launched
+                ? $"已打开所在文件夹：{SelectedPhoto.FolderName}"
+                : "系统没有打开所在文件夹。";
+        }
+        catch (Exception exception)
+        {
+            LogLaunchFailed(logger, exception, SelectedPhoto.Path);
+            StatusMessage = "打开所在文件夹失败。详细信息已写入本地日志。";
+        }
+    }
 
     [RelayCommand]
     private void ToggleInformationPane()
@@ -519,6 +608,7 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     private void ClearSelection()
     {
         selectedPhotoIndex = -1;
+        SelectedPhoto = null;
         SelectedPreviewImage = null;
         SelectedFileName = "选择一张照片";
         SelectedPath = "点击底部缩略图或左侧文件夹中的图片以查看预览和详细信息。";
@@ -526,6 +616,14 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         SelectedDetails = "尺寸、格式和大小会显示在这里。";
         SelectedDate = "日期：尚未选择";
         SelectedCamera = "相机：尚未选择";
+        SelectedPositionLabel = "0 / 0";
+    }
+
+    private void UpdateSelectedPositionLabel()
+    {
+        SelectedPositionLabel = selectedPhotoIndex >= 0 && Photos.Count > 0
+            ? $"{selectedPhotoIndex + 1:N0} / {Photos.Count:N0}"
+            : "0 / 0";
     }
 
     public void Dispose()
@@ -703,6 +801,9 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     [LoggerMessage(EventId = 6, Level = LogLevel.Warning, Message = "Applying a watched file change failed for {PhotoPath}.")]
     private static partial void LogWatcherChangeFailed(ILogger logger, Exception exception, string photoPath);
+
+    [LoggerMessage(EventId = 7, Level = LogLevel.Warning, Message = "Launching the selected photo or folder failed for {PhotoPath}.")]
+    private static partial void LogLaunchFailed(ILogger logger, Exception exception, string photoPath);
 }
 
 public sealed record PhotoListItem(

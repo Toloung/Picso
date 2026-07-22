@@ -2,6 +2,8 @@ using LocalPhotoManager.App.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Windows.System;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -18,7 +20,11 @@ public sealed partial class MainPage : Page
     public MainPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => await ViewModel.LoadAsync();
+        Loaded += async (_, _) =>
+        {
+            Focus(FocusState.Programmatic);
+            await ViewModel.LoadAsync();
+        };
     }
 
     private async void OnNavigationSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -64,6 +70,41 @@ public sealed partial class MainPage : Page
         if (args.ClickedItem is TimelineGroupItem group)
         {
             await ViewModel.LoadTimelineMonthAsync(group);
+        }
+    }
+
+    private async void OnPageKeyDown(object sender, KeyRoutedEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case VirtualKey.Left:
+                ViewModel.SelectPreviousPhotoCommand.Execute(null);
+                args.Handled = true;
+                break;
+            case VirtualKey.Right:
+                ViewModel.SelectNextPhotoCommand.Execute(null);
+                args.Handled = true;
+                break;
+            case VirtualKey.Enter:
+                await ViewModel.OpenSelectedPhotoCommand.ExecuteAsync(null);
+                args.Handled = true;
+                break;
+            case VirtualKey.F:
+                await ViewModel.RevealSelectedPhotoCommand.ExecuteAsync(null);
+                args.Handled = true;
+                break;
+            case VirtualKey.I:
+                ViewModel.ToggleInformationPaneCommand.Execute(null);
+                args.Handled = true;
+                break;
+            case VirtualKey.Escape:
+                if (ViewModel.InformationPaneVisibility == Visibility.Visible)
+                {
+                    ViewModel.ToggleInformationPaneCommand.Execute(null);
+                    args.Handled = true;
+                }
+
+                break;
         }
     }
 }

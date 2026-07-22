@@ -19,3 +19,4 @@
 - Changed indexing to store each photo against its actual parent folder and added a regression test for moving existing rows from a scan root to a subfolder.
 - Removed the low-value sidebar function button group and kept the left rail focused on folders, subfolders, and timeline groups.
 - Added expandable folder-tree navigation and recursive folder filtering so parent folders include child-folder photos.
+- Added viewer-oriented mouse and keyboard interactions: selected filmstrip item binding, current-photo counter, left/right navigation, Enter to open the original photo, F to reveal it in Explorer, I/Esc info-pane shortcuts, and preview toolbar buttons.
