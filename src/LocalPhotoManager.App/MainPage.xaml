@@ -73,17 +73,26 @@
                     <ListView ItemsSource="{x:Bind ViewModel.Folders, Mode=OneWay}"
                               SelectionMode="Single" IsItemClickEnabled="True" ItemClick="OnFolderItemClick">
                         <ListView.ItemTemplate>
-                            <DataTemplate x:DataType="viewModels:FolderSummaryItem">
-                                <Grid Padding="4" ColumnSpacing="8">
+                            <DataTemplate x:DataType="viewModels:FolderTreeItem">
+                                <Grid Padding="4" Margin="{x:Bind Indent}" ColumnSpacing="6">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="28" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="2">
+                                    <Button Width="24" Height="24" Padding="0" Click="OnFolderToggleClick"
+                                            Background="Transparent" BorderBrush="Transparent"
+                                            ToolTipService.ToolTip="展开或折叠">
+                                        <TextBlock Text="{x:Bind ExpansionGlyph, Mode=OneWay}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Button>
+                                    <StackPanel Grid.Column="1" Spacing="2">
                                         <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Text="{x:Bind Path}" Opacity="0.62" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="{x:Bind CountLabel}" Opacity="0.65" />
+                                    <StackPanel Grid.Column="2" HorizontalAlignment="Right">
+                                        <TextBlock Text="{x:Bind CountLabel}" HorizontalAlignment="Right" Opacity="0.75" />
+                                        <TextBlock Text="{x:Bind LatestLabel}" HorizontalAlignment="Right" Opacity="0.55" />
+                                    </StackPanel>
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>

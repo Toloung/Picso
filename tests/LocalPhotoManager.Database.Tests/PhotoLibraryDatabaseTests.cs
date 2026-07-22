@@ -81,6 +81,25 @@ public sealed class PhotoLibraryDatabaseTests : IDisposable
         Assert.Equal("moved.jpg", Assert.Single(await database.GetPhotosByDirectoryAsync("C:\\Photos\\A")).Photo.FileName);
     }
 
+    [Fact]
+    public async Task GetPhotosUnderDirectoryAsyncIncludesChildDirectories()
+    {
+        var database = new PhotoLibraryDatabase(Path.Combine(temporaryDirectory, "library.db"));
+        await database.InitializeAsync();
+        var rootPhoto = new DiscoveredPhoto("C:\\Photos\\root.jpg", "root.jpg", ".jpg", 42, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var childPhoto = new DiscoveredPhoto("C:\\Photos\\A\\child.jpg", "child.jpg", ".jpg", 64, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var metadata = new ImageMetadata("image/jpeg", 1920, 1080, null, null, null, null);
+
+        await database.UpsertPhotoAsync("C:\\Photos", rootPhoto, metadata);
+        await database.UpsertPhotoAsync("C:\\Photos\\A", childPhoto, metadata);
+
+        var photos = await database.GetPhotosUnderDirectoryAsync("C:\\Photos");
+
+        Assert.Equal(2, photos.Count);
+        Assert.Contains(photos, photo => photo.Photo.FileName == "root.jpg");
+        Assert.Contains(photos, photo => photo.Photo.FileName == "child.jpg");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(temporaryDirectory))

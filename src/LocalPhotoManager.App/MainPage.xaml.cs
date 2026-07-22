@@ -45,9 +45,17 @@ public sealed partial class MainPage : Page
 
     private async void OnFolderItemClick(object sender, ItemClickEventArgs args)
     {
-        if (args.ClickedItem is FolderSummaryItem folder)
+        if (args.ClickedItem is FolderTreeItem folder)
         {
             await ViewModel.LoadFolderAsync(folder);
+        }
+    }
+
+    private void OnFolderToggleClick(object sender, RoutedEventArgs args)
+    {
+        if (sender is FrameworkElement { DataContext: FolderTreeItem folder })
+        {
+            ViewModel.ToggleFolder(folder);
         }
     }
 

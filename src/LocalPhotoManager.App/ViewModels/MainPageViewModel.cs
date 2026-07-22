@@ -41,9 +41,12 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<PhotoListItem> Photos { get; } = [];
 
-    public ObservableCollection<FolderSummaryItem> Folders { get; } = [];
+    public ObservableCollection<FolderTreeItem> Folders { get; } = [];
 
     public ObservableCollection<TimelineGroupItem> TimelineGroups { get; } = [];
+
+    private readonly HashSet<string> expandedFolderPaths = new(StringComparer.OrdinalIgnoreCase);
+    private List<FolderTreeItem> folderTreeRoots = [];
 
     [ObservableProperty]
     public partial string ViewTitle { get; set; } = "照片";
@@ -222,13 +225,28 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         }
     }
 
-    public async Task LoadFolderAsync(FolderSummaryItem folder)
+    public async Task LoadFolderAsync(FolderTreeItem folder)
     {
         await database.InitializeAsync();
-        var indexedPhotos = await database.GetPhotosByDirectoryAsync(folder.Path);
+        var indexedPhotos = await database.GetPhotosUnderDirectoryAsync(folder.Path);
         await ReplacePhotosAsync(indexedPhotos);
         ViewTitle = folder.Name;
         StatusMessage = $"已显示文件夹中的 {indexedPhotos.Count:N0} 张图片。";
+    }
+
+    public void ToggleFolder(FolderTreeItem folder)
+    {
+        if (!folder.HasChildren)
+        {
+            return;
+        }
+
+        if (!expandedFolderPaths.Add(folder.Path))
+        {
+            expandedFolderPaths.Remove(folder.Path);
+        }
+
+        RefreshVisibleFolders();
     }
 
     public async Task LoadTimelineMonthAsync(TimelineGroupItem group)
@@ -429,17 +447,41 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
     private async Task RefreshSummariesAsync(CancellationToken cancellationToken = default)
     {
         var folders = await database.GetFolderSummariesAsync(cancellationToken);
-        Folders.Clear();
-        foreach (var folder in folders)
-        {
-            Folders.Add(FolderSummaryItem.From(folder));
-        }
+        folderTreeRoots = BuildFolderTree(folders);
+        RefreshVisibleFolders();
 
         var timelineGroups = await database.GetTimelineGroupsAsync(cancellationToken);
         TimelineGroups.Clear();
         foreach (var timelineGroup in timelineGroups)
         {
             TimelineGroups.Add(TimelineGroupItem.From(timelineGroup));
+        }
+    }
+
+    private void RefreshVisibleFolders()
+    {
+        Folders.Clear();
+        foreach (var folder in FlattenVisibleFolders(folderTreeRoots))
+        {
+            Folders.Add(folder);
+        }
+    }
+
+    private IEnumerable<FolderTreeItem> FlattenVisibleFolders(IEnumerable<FolderTreeItem> folders)
+    {
+        foreach (var folder in folders)
+        {
+            folder.IsExpanded = expandedFolderPaths.Contains(folder.Path);
+            yield return folder;
+            if (!folder.IsExpanded)
+            {
+                continue;
+            }
+
+            foreach (var child in FlattenVisibleFolders(folder.Children))
+            {
+                yield return child;
+            }
         }
     }
 
@@ -536,6 +578,114 @@ public sealed partial class MainPageViewModel : ObservableObject, IDisposable
         return PathPolicy.NormalizePath(string.IsNullOrWhiteSpace(directoryPath) ? photo.Path : directoryPath);
     }
 
+    private static List<FolderTreeItem> BuildFolderTree(IReadOnlyList<FolderSummary> summaries)
+    {
+        var nodesByPath = new Dictionary<string, FolderTreeItem>(StringComparer.OrdinalIgnoreCase);
+        var roots = new List<FolderTreeItem>();
+
+        foreach (var summary in summaries)
+        {
+            FolderTreeItem? parent = null;
+            foreach (var segment in EnumerateFolderSegments(summary.DirectoryPath))
+            {
+                if (!nodesByPath.TryGetValue(segment.Path, out var node))
+                {
+                    node = new FolderTreeItem(segment.Name, segment.Path, segment.Level);
+                    nodesByPath.Add(segment.Path, node);
+                    if (parent is null)
+                    {
+                        roots.Add(node);
+                    }
+                    else
+                    {
+                        parent.Children.Add(node);
+                    }
+                }
+
+                parent = node;
+            }
+
+            if (parent is not null)
+            {
+                parent.DirectPhotoCount += summary.PhotoCount;
+                parent.LatestModifiedAtUtc = Max(parent.LatestModifiedAtUtc, summary.LatestModifiedAtUtc);
+            }
+        }
+
+        foreach (var root in roots)
+        {
+            FinalizeFolderTree(root);
+        }
+
+        SortFolderTree(roots);
+        return roots;
+    }
+
+    private static IEnumerable<(string Name, string Path, int Level)> EnumerateFolderSegments(string directoryPath)
+    {
+        var trimmedPath = directoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var root = Path.GetPathRoot(trimmedPath);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            yield return (trimmedPath, trimmedPath, 0);
+            yield break;
+        }
+
+        var relativePath = trimmedPath.Length <= root.Length ? string.Empty : trimmedPath[root.Length..];
+        var parts = relativePath.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            yield return (root.TrimEnd(Path.DirectorySeparatorChar), root.TrimEnd(Path.DirectorySeparatorChar), 0);
+            yield break;
+        }
+
+        var currentPath = root;
+        for (var index = 0; index < parts.Length; index++)
+        {
+            currentPath = Path.Combine(currentPath, parts[index]);
+            yield return (parts[index], PathPolicy.NormalizePath(currentPath), index);
+        }
+    }
+
+    private static void FinalizeFolderTree(FolderTreeItem folder)
+    {
+        var photoCount = folder.DirectPhotoCount;
+        var latest = folder.LatestModifiedAtUtc;
+        foreach (var child in folder.Children)
+        {
+            FinalizeFolderTree(child);
+            photoCount += child.PhotoCount;
+            latest = Max(latest, child.LatestModifiedAtUtc);
+        }
+
+        folder.PhotoCount = photoCount;
+        folder.LatestModifiedAtUtc = latest;
+    }
+
+    private static void SortFolderTree(List<FolderTreeItem> folders)
+    {
+        folders.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
+        foreach (var folder in folders)
+        {
+            SortFolderTree(folder.Children);
+        }
+    }
+
+    private static DateTimeOffset? Max(DateTimeOffset? left, DateTimeOffset? right)
+    {
+        if (left is null)
+        {
+            return right;
+        }
+
+        if (right is null)
+        {
+            return left;
+        }
+
+        return left > right ? left : right;
+    }
+
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "The scan of {FolderPath} failed.")]
     private static partial void LogScanFailed(ILogger logger, Exception exception, string folderPath);
 
@@ -604,22 +754,35 @@ public sealed record PhotoListItem(
     }
 }
 
-public sealed record FolderSummaryItem(string Name, string Path, string CountLabel, string LatestLabel)
+public sealed class FolderTreeItem(string name, string path, int level)
 {
-    public static FolderSummaryItem From(FolderSummary summary)
-    {
-        var name = System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(summary.DirectoryPath));
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            name = summary.DirectoryPath;
-        }
+    public string Name { get; } = name;
 
-        return new FolderSummaryItem(
-            name,
-            summary.DirectoryPath,
-            $"{summary.PhotoCount:N0} 张",
-            summary.LatestModifiedAtUtc is null ? "尚无时间" : summary.LatestModifiedAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
-    }
+    public string Path { get; } = path;
+
+    public int Level { get; } = level;
+
+    public int DirectPhotoCount { get; set; }
+
+    public int PhotoCount { get; set; }
+
+    public DateTimeOffset? LatestModifiedAtUtc { get; set; }
+
+    public List<FolderTreeItem> Children { get; } = [];
+
+    public bool IsExpanded { get; set; }
+
+    public bool HasChildren => Children.Count > 0;
+
+    public Thickness Indent => new(Level * 14, 0, 0, 0);
+
+    public string ExpansionGlyph => !HasChildren ? string.Empty : IsExpanded ? "▾" : "▸";
+
+    public string CountLabel => $"{PhotoCount:N0} 张";
+
+    public string LatestLabel => LatestModifiedAtUtc is null
+        ? "尚无时间"
+        : LatestModifiedAtUtc.Value.LocalDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 }
 
 public sealed record TimelineGroupItem(int Year, int Month, string Title, string CountLabel)

@@ -178,6 +178,28 @@ public sealed class PhotoLibraryDatabase
         return await ReadIndexedPhotosAsync(command, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<IndexedPhoto>> GetPhotosUnderDirectoryAsync(string directoryPath, int limit = 500, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directoryPath);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        var normalizedDirectoryPath = directoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT p.path, p.file_name, p.extension, p.file_size, p.created_time, p.modified_time, p.mime_type, p.width, p.height, p.orientation, p.taken_time, p.camera_make, p.camera_model
+            FROM photos p
+            INNER JOIN directories d ON d.id = p.directory_id
+            WHERE p.is_missing = 0 AND (d.path = $directoryPath OR d.path LIKE $directoryPrefix)
+            ORDER BY COALESCE(p.taken_time, p.modified_time) DESC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$directoryPath", normalizedDirectoryPath);
+        command.Parameters.AddWithValue("$directoryPrefix", normalizedDirectoryPath + "\\%");
+        command.Parameters.AddWithValue("$limit", limit);
+        return await ReadIndexedPhotosAsync(command, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<IndexedPhoto>> GetPhotosByMonthAsync(int year, int month, int limit = 500, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(year, 1);

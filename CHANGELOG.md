@@ -17,3 +17,4 @@
 - Reworked the main layout with a top menu, left library/sidebar, large preview canvas, bottom filmstrip, navigation arrows, and a toggleable info pane.
 - Store indexed photos under their actual parent folders so subfolder browsing works after rescans.
 - Removed redundant large sidebar function buttons so the sidebar focuses on folders and timeline browsing.
+- Added expandable folder-tree navigation and recursive parent-folder photo filtering.
